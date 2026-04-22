@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campus Knowledge Agent</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+    <style>
+        :root { 
+            --cpp-green: #004225; 
+            --cpp-gold: #FFB81C; 
+            --bg-gray: #f9f9f9;
+        }
+        
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            margin: 0; 
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh; 
+            background: var(--bg-gray); 
+        }
+
+        header { 
+            background: var(--cpp-green); 
+            color: white; 
+            padding: 1rem; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        #chat-container { 
+            flex: 1; 
+            overflow-y: auto; 
+            padding: 20px; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 15px; 
+        }
+
+        .message { 
+            max-width: 80%; 
+            padding: 12px 16px; 
+            border-radius: 12px; 
+            line-height: 1.5; 
+            font-size: 0.95rem;
+            word-wrap: break-word;
+        }
+
+        .user { 
+            align-self: flex-end; 
+            background: var(--cpp-green); 
+            color: white; 
+            border-bottom-right-radius: 2px;
+        }
+
+        .assistant { 
+            align-self: flex-start; 
+            background: white; 
+            border: 1px solid #e0e0e0; 
+            color: #333; 
+            border-bottom-left-radius: 2px;
+        }
+
+        .sources { 
+            font-size: 0.8rem; 
+            color: #666; 
+            margin-top: 10px; 
+            padding-top: 8px; 
+            border-top: 1px solid #eee; 
+        }
+
+        .source-link {
+            display: block;
+            color: #0066cc;
+            text-decoration: none;
+            margin-top: 2px;
+        }
+
+        .source-link:hover { text-decoration: underline; }
+
+        footer { 
+            padding: 20px; 
+            background: white; 
+            border-top: 1px solid #ddd; 
+            display: flex; 
+            gap: 10px; 
+            justify-content: center;
+        }
+
+        input { 
+            width: 100%;
+            max-width: 800px;
+            padding: 12px; 
+            border: 1px solid #ccc; 
+            border-radius: 8px; 
+            outline: none; 
+            transition: border-color 0.2s;
+        }
+
+        input:focus { border-color: var(--cpp-green); }
+
+        button { 
+            background: var(--cpp-gold); 
+            color: var(--cpp-green); 
+            border: none; 
+            padding: 10px 24px; 
+            font-weight: bold; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            transition: background 0.2s;
+        }
+
+        button:hover { background: #e6a619; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Markdown rendered content */
+        .assistant .md-content h1,
+        .assistant .md-content h2,
+        .assistant .md-content h3 {
+            margin: 0.6em 0 0.3em;
+            font-size: 1em;
+            font-weight: 700;
+            color: #222;
+        }
+        .assistant .md-content p { margin: 0.4em 0; }
+        .assistant .md-content ul,
+        .assistant .md-content ol {
+            margin: 0.4em 0;
+            padding-left: 1.4em;
+        }
+        .assistant .md-content li { margin: 0.2em 0; }
+        .assistant .md-content strong { font-weight: 700; }
+        .assistant .md-content em { font-style: italic; }
+        .assistant .md-content code {
+            background: #f0f0f0;
+            padding: 1px 4px;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        .assistant .md-content a { color: #0066cc; }
+        /* Remove top margin on first element */
+        .assistant .md-content > *:first-child { margin-top: 0; }
+        .assistant .md-content > *:last-child { margin-bottom: 0; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1 style="margin:0; font-size: 1.5rem;">🐴 Campus Knowledge Agent</h1>
+</header>
+
+<div id="chat-container">
+    <div class="message assistant">
+        Hello! I'm the Cal Poly Pomona Assistant. Ask me about admissions, financial aid, campus locations, or really anything!
+    </div>
+</div>
+
+<footer>
+    <input type="text" id="userInput" placeholder="Type your question here..." autocomplete="off">
+    <button id="sendBtn">Send</button>
+</footer>
+
+<script>
+    const chatContainer = document.getElementById('chat-container');
+    const userInput = document.getElementById('userInput');
+    const sendBtn = document.getElementById('sendBtn');
+    
+    // maintains context for multi-turn conversation 
+    let conversationHistory = []; 
+
+    async function sendMessage() {
+        const message = userInput.value.trim();
+        if (!message) return;
+
+        // Display user query
+        appendMessage('user', message);
+        userInput.value = '';
+        sendBtn.disabled = true;
+
+        try {
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    message: message, 
+                    history: conversationHistory 
+                })
+            });
+
+            if (!response.ok) throw new Error('Server returned an error');
+
+            const data = await response.json();
+
+            // Display grounded assistant response with sources [cite: 34, 36]
+            appendMessage('assistant', data.answer, data.sources);
+
+            // Update local history for the next turn 
+            conversationHistory.push({ role: 'user', content: message });
+            conversationHistory.push({ role: 'assistant', content: data.answer });
+
+        } catch (err) {
+            appendMessage('assistant', "I'm having trouble connecting to the campus server right now. Please try again.");
+        } finally {
+            sendBtn.disabled = false;
+        }
+    }
+
+    function appendMessage(role, text, sources = []) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `message ${role}`;
+
+        let contentHtml = '';
+
+        if (role === 'assistant') {
+            // Render markdown for assistant messages
+            const rendered = marked.parse(text || '');
+            contentHtml = `<div class="md-content">${rendered}</div>`;
+        } else {
+            contentHtml = `<div>${text}</div>`;
+        }
+
+        // Requirement: Source Attribution
+        if (sources && sources.length > 0) {
+            contentHtml += `<div class="sources"><strong>Sources:</strong>`;
+            sources.forEach(src => {
+                // Handle both plain strings and objects with a url/href property
+                const url = (typeof src === 'string') ? src : (src.url || src.href || src.link || JSON.stringify(src));
+                const label = (typeof src === 'string') ? src : (src.title || url);
+                contentHtml += `<a href="${url}" target="_blank" class="source-link">${label}</a>`;
+            });
+            contentHtml += `</div>`;
+        }
+
+        msgDiv.innerHTML = contentHtml;
+        chatContainer.appendChild(msgDiv);
+
+        // Auto-scroll to latest message
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    sendBtn.onclick = sendMessage;
+    userInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessage();
+    });
+</script>
+
+</body>
+</html>
